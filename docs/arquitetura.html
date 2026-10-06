@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulso · Como o agente funciona</title>
+<style>
+  :root {
+    --bg: #F6F8FB; --surface: #FFFFFF; --ink: #0A2540; --muted: #52627A; --line: #D5DDE8;
+    --teal: #00897F; --teal-soft: #E3F4F2; --pink: #D9434F; --pink-soft: #FCE9EB; --navy-soft: #E8EEF6;
+    --code: #EEF2F7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #071A2C; --surface: #0E2741; --ink: #EAF1F8; --muted: #9FB0C4; --line: #23476B;
+      --teal: #3CCFC2; --teal-soft: #0E3B4A; --pink: #F7838C; --pink-soft: #40263F; --navy-soft: #13314F;
+      --code: #0B2036;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #071A2C; --surface: #0E2741; --ink: #EAF1F8; --muted: #9FB0C4; --line: #23476B;
+    --teal: #3CCFC2; --teal-soft: #0E3B4A; --pink: #F7838C; --pink-soft: #40263F; --navy-soft: #13314F;
+    --code: #0B2036;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 48px 16px 72px; }
+  h1 { font-size: 2rem; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.5px; text-wrap: balance; }
+  h2 { font-size: 1.35rem; line-height: 1.25; margin: 56px 0 6px; display: flex; align-items: center; gap: 12px; }
+  h2 .n { width: 30px; height: 30px; border-radius: 50%; background: var(--teal); color: var(--surface);
+          display: inline-flex; align-items: center; justify-content: center; font-size: .95rem; flex: none; }
+  h3 { font-size: 1rem; margin: 24px 0 8px; }
+  p { margin: 0 0 12px; max-width: 68ch; }
+  .lead { color: var(--muted); font-size: 1.08rem; }
+  .sub { color: var(--muted); margin-bottom: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin: 14px 0; }
+  code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .86em; }
+  code { background: var(--code); border-radius: 6px; padding: 1px 6px; }
+  pre { background: var(--code); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 8px 0 0; line-height: 1.55; }
+  pre code { background: none; padding: 0; font-size: 1em; }
+
+  /* equação e diagrama */
+  .eq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .eq div { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .eq b { display: block; font-size: 1.05rem; }
+  .eq span { color: var(--muted); font-size: .92rem; }
+  .fluxo { display: grid; gap: 8px; }
+  .no { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+  .no b { display: block; }
+  .no small { color: var(--muted); }
+  .no.agente { border: 2px solid var(--teal); background: var(--teal-soft); }
+  .seta { text-align: center; color: var(--muted); line-height: 1; font-size: 1.1rem; }
+  .ramos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+  /* logos da AWS e o mapa da arquitetura */
+  .ico { width: 28px; height: 28px; border-radius: 6px; vertical-align: middle; flex: none; }
+  td .ico { width: 22px; height: 22px; margin-right: 8px; }
+  /* fluxograma */
+  .diagrama { padding: 12px; }
+  .diagrama > svg { display: block; width: 100%; min-width: 760px; height: auto; font-family: inherit; }
+  .diagrama .cx { fill: var(--surface); stroke: var(--line); }
+  .diagrama .cx.tr { stroke-dasharray: 4 4; }
+  .diagrama .rt { fill: var(--teal-soft); stroke: var(--teal); stroke-width: 2; }
+  .diagrama .gr { fill: var(--pink-soft); stroke: var(--pink); stroke-dasharray: 6 4; }
+  .diagrama .tile { fill: var(--surface); stroke: var(--line); } .diagrama .tile.rosa { fill: var(--surface); }
+  .diagrama .gl { color: var(--teal); } .diagrama .gl.rosa { color: var(--pink); }
+  .diagrama .t { font-size: 14px; font-weight: 700; fill: var(--ink); }
+  .diagrama .s, .diagrama .d { font-size: 12px; fill: var(--muted); }
+  .diagrama .r { font-size: 12px; font-weight: 700; fill: var(--pink); }
+  .diagrama .m { font-size: 12px; fill: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .diagrama .rtt { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; fill: var(--teal); }
+  .diagrama .gt { font-size: 12px; font-weight: 700; fill: var(--pink); }
+  .diagrama .div { stroke: var(--line); }
+  .diagrama .nb { fill: var(--teal); stroke: var(--surface); stroke-width: 2; }
+  .diagrama .nt { font-size: 12px; font-weight: 700; fill: var(--surface); text-anchor: middle; }
+  .diagrama .fio { fill: none; stroke: var(--teal); stroke-width: 2; stroke-dasharray: 6 5; animation: correr 1.2s linear infinite; }
+  .diagrama .fio.rosa { stroke: var(--muted); }
+  @keyframes correr { to { stroke-dashoffset: -22; } }
+  @media (prefers-reduced-motion: reduce) { .diagrama .fio { animation: none; } }
+  .legenda { margin-top: 12px; color: var(--muted); font-size: .93rem; columns: 2; column-gap: 32px; }
+  .selo { position: relative; display: inline-flex; width: 26px; height: 26px; margin-right: 10px; border-radius: 7px; vertical-align: middle;
+          background: var(--teal-soft); color: var(--teal); align-items: center; justify-content: center; }
+  .selo i { display: inline-flex; } .selo i svg { width: 16px; height: 16px; }
+  .selo img { position: absolute; right: -6px; bottom: -5px; width: 13px; height: 13px; border-radius: 3px; }
+  /* árvore de spans */
+  .arvore { list-style: none; margin: 0; padding: 0; font-size: .92rem; }
+  .arvore ul { list-style: none; margin: 0; padding-left: 18px; border-left: 2px solid var(--line); }
+  .arvore li { padding: 3px 0; }
+  .arvore code { font-weight: 600; }
+  .arvore span { color: var(--muted); }
+  details.card > summary { cursor: pointer; font-weight: 600; }
+  /* tabelas */
+  .rolagem { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--navy-soft); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.id { white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85em; color: var(--muted); }
+  .tag { display: inline-block; background: var(--teal-soft); border-radius: 999px; padding: 1px 9px; font-size: .8rem; white-space: nowrap; }
+
+  /* dois tempos do RAG */
+  .tempos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tempos .card { margin: 0; }
+  .rotulo { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--teal); font-weight: 700; }
+  ol.passos { margin: 8px 0 0; padding-left: 20px; }
+  ol.passos li { margin-bottom: 6px; }
+  .barra { height: 8px; border-radius: 4px; background: var(--teal); margin-top: 6px; }
+
+  /* conversa volta a volta */
+  .volta { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .volta:last-child { border-bottom: 0; }
+  .quem { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding-top: 3px; }
+  .quem.p { color: var(--muted); } .quem.a { color: var(--teal); } .quem.f { color: var(--ink); } .quem.h { color: var(--pink); }
+  .fala { margin: 0; }
+  .aviso { background: var(--pink-soft); border-left: 4px solid var(--pink); border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+  .aviso p:last-child { margin: 0; }
+  /* prints da interface */
+  figure.print { margin: 14px 0 26px; }
+  figure.print a { display: block; }
+  figure.print img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; }
+  figure.print figcaption { color: var(--muted); font-size: .9rem; margin-top: 8px; }
+  .ir { font-weight: 600; color: var(--teal); }
+  footer { margin-top: 56px; color: var(--muted); font-size: .88rem; border-top: 1px solid var(--line); padding-top: 16px; }
+
+  /* menu lateral e seções */
+  .hamb { position: fixed; top: 14px; left: 14px; z-index: 30; width: 42px; height: 42px; border-radius: 10px;
+          border: 1px solid var(--line); background: var(--surface); cursor: pointer; display: flex;
+          flex-direction: column; justify-content: center; gap: 5px; padding: 0 10px; }
+  .hamb span { display: block; height: 2px; border-radius: 2px; background: var(--ink); }
+  .hamb:focus-visible, .menu a:focus-visible, .passo button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .menu { position: fixed; top: 0; left: 0; bottom: 0; z-index: 20; width: 270px; padding: 72px 12px 20px;
+          background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto;
+          transform: translateX(-100%); transition: transform .2s ease; }
+  body.aberto .menu { transform: none; }
+  .menu-t { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 8px 8px; }
+  .menu a { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; color: var(--ink); text-decoration: none; font-size: .95rem; }
+  .menu a:hover { background: var(--navy-soft); }
+  .menu a .n { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); display: inline-flex;
+               align-items: center; justify-content: center; font-size: .85rem; flex: none; }
+  .menu a.ativo { background: var(--teal-soft); font-weight: 600; }
+  .menu a.ativo .n { background: var(--teal); border-color: var(--teal); color: var(--surface); }
+  .veu { display: none; position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.35); }
+  main { transition: margin-left .2s ease; }
+  .secao { display: none; }
+  .secao.ativa { display: block; }
+  .secao h2 { margin-top: 36px; }
+  .passo { display: flex; justify-content: space-between; gap: 12px; margin-top: 40px; }
+  .passo button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+                  border-radius: 10px; padding: 9px 16px; cursor: pointer; }
+  .passo button:hover { background: var(--navy-soft); }
+  .passo button[hidden] { visibility: hidden; display: block; }
+  @media (min-width: 1100px) { body.aberto main { margin-left: max(286px, calc((100% - 1040px) / 2)); } }
+  @media (max-width: 1099px) { body.aberto .veu { display: block; } main { padding-top: 72px; } }
+  @media (prefers-reduced-motion: reduce) { .menu, main { transition: none; } }
+  @media print { .hamb, .menu, .veu, .passo { display: none; } .secao { display: block; } }
+
+  @media (max-width: 640px) {
+    .eq, .tempos { grid-template-columns: 1fr; }
+    .legenda { columns: 1; }
+    .ramos { grid-template-columns: 1fr 1fr; }
+    .volta { grid-template-columns: 1fr; gap: 2px; }
+    h1 { font-size: 1.6rem; }
+  }
+</style>
+<noscript><style>.secao { display: block; } .hamb, .menu, .passo { display: none; }</style></noscript>
+</head>
+<body>
+<button class="hamb" id="hamb" type="button" aria-label="Abrir ou fechar o menu" aria-expanded="false" aria-controls="menu">
+  <span></span><span></span><span></span>
+</button>
+<nav class="menu" id="menu" aria-label="Seções">
+  <p class="menu-t">Seções</p>
+  <a href="#s1"><span class="n">1</span><span class="t">Visão geral</span></a>
+  <a href="#s2"><span class="n">2</span><span class="t">Os dados e o RAG</span></a>
+  <a href="#s3"><span class="n">3</span><span class="t">Uma conversa, volta por volta</span></a>
+  <a href="#s4"><span class="n">4</span><span class="t">A interface, tela por tela</span></a>
+  <a href="#s5"><span class="n">5</span><span class="t">Observabilidade</span></a>
+</nav>
+<div class="veu" id="veu"></div>
+<main>
+
+<h1>Como o agente de agendamento funciona</h1>
+<p class="lead">Um agente atende pacientes de uma rede de saúde fictícia: mostra consultas, remarca só depois do "sim" e tira dúvidas de preparo de exames lendo os documentos da Rede. Esta página segue um pedido do começo ao fim, com os dados reais do projeto.</p>
+<p class="lead">Ainda não rodou o projeto? <a class="ir" href="guia-de-inicio.md">Comece pelo guia de início</a>.</p>
+
+<section class="secao" id="s1">
+<h2><span class="n">1</span>Visão geral</h2>
+<p class="sub">Um agente é um modelo, algumas ferramentas e um loop. Tudo roda em serviços serverless da AWS, em <code>us-east-1</code>: paga-se só pelo uso.</p>
+
+<div class="eq">
+  <div><b>Modelo</b><span>O cérebro. Lê a conversa e decide o próximo passo. GPT-5.6 Luna, no Amazon Bedrock.</span></div>
+  <div><b>Ferramentas</b><span>As mãos. Cinco funções Python: quatro da agenda e uma de busca nos documentos.</span></div>
+  <div><b>Loop</b><span>Pensar, agir, observar, repetir. Quem roda o loop é o Strands Agents.</span></div>
+</div>
+
+<h3>O caminho de uma mensagem</h3>
+<div class="rolagem diagrama">
+<svg viewBox="0 0 1210 460" role="img" aria-label="Fluxograma: o caminho de uma mensagem pelos serviços da AWS">
+<defs>
+  <marker id="ponta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--teal)"/></marker>
+  <marker id="pontar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/></marker>
+</defs>
+<rect class="tile " x="38" y="193" width="44" height="44" rx="11"/><g class="gl " data-ico="user-round" transform="translate(49,204)"></g>
+<text class="t" x="60" y="257" text-anchor="middle">Paciente</text><text class="s" x="60" y="273" text-anchor="middle">chat</text>
+<path class="fio " d="M 90 203 L 186 203" marker-end="url(#ponta)"/>
+<circle class="nb" cx="138" cy="203" r="11"/><text class="nt" x="138" y="207">1</text>
+<text class="s" x="138" y="184" text-anchor="middle">mensagem</text>
+<path class="fio " d="M 188 229 L 92 229" marker-end="url(#ponta)"/>
+<circle class="nb" cx="138" cy="229" r="11"/><text class="nt" x="138" y="233">7</text>
+<text class="s" x="138" y="256" text-anchor="middle">resposta</text>
+<rect class="rt" x="190" y="40" width="540" height="350" rx="18"/>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonBedrockAgentCore.svg" x="206" y="54" width="22" height="22"/>
+<text class="rtt" x="236" y="70" text-anchor="start">AGENTCORE RUNTIME · O AGENTE</text>
+<rect class="tile " x="263" y="106" width="44" height="44" rx="11"/><g class="gl " data-ico="file-text" transform="translate(274,117)"></g>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonBedrock.svg" x="293" y="136" width="18" height="18"/>
+<text class="t" x="285" y="170" text-anchor="middle">Prompt Management</text><text class="s" x="285" y="186" text-anchor="middle">system prompt</text>
+<circle class="nb" cx="261" cy="104" r="11"/><text class="nt" x="261" y="108">2</text>
+<rect class="tile " x="263" y="268" width="44" height="44" rx="11"/><g class="gl " data-ico="history" transform="translate(274,279)"></g>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonBedrockAgentCore.svg" x="293" y="298" width="18" height="18"/>
+<text class="t" x="285" y="332" text-anchor="middle">AgentCore Memory</text><text class="s" x="285" y="348" text-anchor="middle">histórico</text>
+<circle class="nb" cx="261" cy="266" r="11"/><text class="nt" x="261" y="270">3</text>
+<rect class="gr" x="415" y="132" width="150" height="166" rx="14"/>
+<g class="gl rosa" data-ico="shield-check" transform="translate(426,141) scale(.8)"></g>
+<text class="gt" x="450" y="155" text-anchor="start">Guardrails</text>
+<rect class="tile " x="468" y="183" width="44" height="44" rx="11"/><g class="gl " data-ico="sparkles" transform="translate(479,194)"></g>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonBedrock.svg" x="498" y="213" width="18" height="18"/>
+<text class="t" x="490" y="247" text-anchor="middle">GPT-5.6 Luna</text><text class="s" x="490" y="263" text-anchor="middle">modelo no Bedrock</text>
+<path class="fio " d="M 318 118 C 370 118, 375 180, 413 185" marker-end="url(#ponta)"/>
+<path class="fio " d="M 318 280 C 370 280, 375 240, 413 235" marker-end="url(#ponta)"/>
+<rect class="tile " x="643" y="183" width="44" height="44" rx="11"/><g class="gl " data-ico="wrench" transform="translate(654,194)"></g>
+<text class="t" x="665" y="247" text-anchor="middle">Ferramentas</text><text class="s" x="665" y="263" text-anchor="middle">as 5, ao lado</text>
+<path class="fio " d="M 567 195 L 638 195" marker-end="url(#ponta)"/>
+<circle class="nb" cx="602" cy="195" r="11"/><text class="nt" x="602" y="199">4</text>
+<path class="fio " d="M 640 219 L 569 219" marker-end="url(#ponta)"/>
+<circle class="nb" cx="602" cy="219" r="11"/><text class="nt" x="602" y="223">6</text>
+<g class="gl" data-ico="refresh-cw" transform="translate(538,330) scale(.8)"></g>
+<text class="s" x="562" y="344" text-anchor="start">loop: 4 a 6 se repetem</text>
+<text class="rtt" x="822" y="50" text-anchor="start">AGENDA · DADO EXATO</text>
+<text class="m" x="822" y="69" text-anchor="start">buscar_consultas · buscar_horarios</text>
+<text class="m" x="822" y="85" text-anchor="start">buscar_exames · remarcar_consulta</text>
+<rect class="tile " x="828" y="110" width="44" height="44" rx="11"/><g class="gl " data-ico="plug" transform="translate(839,121)"></g>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonBedrockAgentCore.svg" x="858" y="140" width="18" height="18"/>
+<text class="t" x="850" y="174" text-anchor="middle">AgentCore Gateway</text><text class="s" x="850" y="190" text-anchor="middle">MCP</text>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AWSLambda.svg" x="978" y="110" width="44" height="44"/>
+<text class="t" x="1000" y="174" text-anchor="middle">Lambda</text><text class="s" x="1000" y="190" text-anchor="middle">regras e travas</text>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonSimpleStorageService.svg" x="1118" y="110" width="44" height="44"/>
+<text class="t" x="1140" y="174" text-anchor="middle">S3</text><text class="s" x="1140" y="190" text-anchor="middle">agenda</text>
+<path class="fio " d="M 882 132 L 968 132" marker-end="url(#ponta)"/>
+<path class="fio " d="M 1032 132 L 1108 132" marker-end="url(#ponta)"/>
+<text class="rtt" x="822" y="246" text-anchor="start">DOCUMENTOS · RAG</text>
+<text class="m" x="822" y="265" text-anchor="start">consultar_orientacoes</text>
+<rect class="tile " x="828" y="290" width="44" height="44" rx="11"/><g class="gl " data-ico="binary" transform="translate(839,301)"></g>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonBedrock.svg" x="858" y="320" width="18" height="18"/>
+<text class="t" x="850" y="354" text-anchor="middle">Cohere Embed</text><text class="s" x="850" y="370" text-anchor="middle">pergunta em vetor</text>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/resource/AmazonSimpleStorageServiceS3Vectors.svg" x="978" y="290" width="44" height="44"/>
+<text class="t" x="1000" y="354" text-anchor="middle">S3 Vectors</text><text class="s" x="1000" y="370" text-anchor="middle">textos próximos</text>
+<path class="fio " d="M 882 312 L 968 312" marker-end="url(#ponta)"/>
+<path class="fio " d="M 692 195 C 765 195, 750 132, 818 132" marker-end="url(#ponta)"/>
+<path class="fio " d="M 692 219 C 765 219, 750 312, 818 312" marker-end="url(#ponta)"/>
+<circle class="nb" cx="757" cy="207" r="11"/><text class="nt" x="757" y="211">5</text>
+<line class="div" x1="20" y1="406" x2="1190" y2="406"/>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AWSCloudFormation.svg" x="190" y="420" width="26" height="26"/><text x="226" y="438"><tspan class="t">CloudFormation</tspan><tspan class="s" dx="8">cria tudo</tspan></text>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AWSIdentityandAccessManagement.svg" x="520" y="420" width="26" height="26"/><text x="556" y="438"><tspan class="t">IAM</tspan><tspan class="s" dx="8">um papel por peça</tspan></text>
+<image href="https://cdn.jsdelivr.net/npm/aws-icons@3.3.0/icons/architecture-service/AmazonCloudWatch.svg" x="820" y="420" width="26" height="26"/><text x="856" y="438"><tspan class="t">CloudWatch</tspan><tspan class="s" dx="8">logs e traces</tspan></text>
+</svg>
+</div>
+<ol class="passos legenda">
+  <li>A mensagem chega ao Runtime com o id da sessão.</li>
+  <li>O agente busca o system prompt.</li>
+  <li>E lê o histórico da conversa.</li>
+  <li>O modelo recebe tudo e pede uma ferramenta. O Guardrail filtra o input e o output.</li>
+  <li>O agente executa a ferramenta pedida. As 4 da agenda passam pelo Gateway e pela Lambda. A <code>consultar_orientacoes</code> faz o RAG.</li>
+  <li>O resultado volta ao modelo. Os passos 4 a 6 se repetem até ele poder responder.</li>
+  <li>A resposta vai para o paciente, e a conversa fica gravada na memória.</li>
+</ol>
+<p style="margin-top:14px">O modelo nunca toca nos dados. Ele só escreve qual ferramenta quer chamar e com quais argumentos. Quem executa é o agente.</p>
+
+<h3>Cada peça e onde ela está no código</h3>
+<div class="rolagem">
+<table>
+  <tr><th>Peça</th><th>Serviço</th><th>Para quê</th><th>No código</th></tr>
+  <tr><td>Agente e loop</td><td><span class="selo"><i data-ico="bot"></i><img data-aws="architecture-service/AmazonBedrockAgentCore" alt=""></span>AgentCore Runtime</td><td>Roda o agente, com uma sessão isolada por conversa</td><td><code>app/agent/agent.py</code></td></tr>
+  <tr><td>Modelo</td><td><span class="selo"><i data-ico="sparkles"></i><img data-aws="architecture-service/AmazonBedrock" alt=""></span>Bedrock · GPT-5.6 Luna</td><td>Decide o próximo passo e escreve a resposta, pela Converse API</td><td><code>app/agent/model.py</code></td></tr>
+  <tr><td>Proteção</td><td><span class="selo"><i data-ico="shield-check"></i><img data-aws="architecture-service/AmazonBedrock" alt=""></span>Bedrock Guardrails</td><td>Filtra a entrada e a saída: conselho clínico, ataque de prompt e CPF</td><td><code>app/agent/model.py</code></td></tr>
+  <tr><td>Instruções</td><td><span class="selo"><i data-ico="file-text"></i><img data-aws="architecture-service/AmazonBedrock" alt=""></span>Bedrock Prompt Management</td><td>System prompt com variáveis e versões. Mudar o texto não pede novo deploy</td><td><code>app/agent/prompt.py</code></td></tr>
+  <tr><td>Memória</td><td><span class="selo"><i data-ico="history"></i><img data-aws="architecture-service/AmazonBedrockAgentCore" alt=""></span>AgentCore Memory</td><td>Histórico da conversa, de curto prazo</td><td><code>app/agent/memory.py</code></td></tr>
+  <tr><td>Ferramentas da agenda</td><td><span class="selo"><i data-ico="plug"></i><img data-aws="architecture-service/AmazonBedrockAgentCore" alt=""></span>AgentCore Gateway</td><td>Expõe a Lambda como ferramentas MCP</td><td><code>app/agent/tools/gateway.py</code></td></tr>
+  <tr><td>Regras da agenda</td><td><img class="ico" data-aws="architecture-service/AWSLambda" alt="">AWS Lambda</td><td>Consulta e remarca, com as travas</td><td><code>app/schedule/</code></td></tr>
+  <tr><td>Agenda</td><td><img class="ico" data-aws="architecture-service/AmazonSimpleStorageService" alt="">Amazon S3</td><td>Guarda o <code>bases.json</code></td><td><code>data/prepare.py</code></td></tr>
+  <tr><td>Embeddings</td><td><span class="selo"><i data-ico="binary"></i><img data-aws="architecture-service/AmazonBedrock" alt=""></span>Bedrock · Cohere Embed v4</td><td>Transforma texto em vetor</td><td><code>app/agent/rag.py</code></td></tr>
+  <tr><td>Busca</td><td><img class="ico" data-aws="resource/AmazonSimpleStorageServiceS3Vectors" alt="">Amazon S3 Vectors</td><td>Guarda os vetores e acha os mais próximos</td><td><code>app/agent/rag.py</code></td></tr>
+  <tr><td>Observabilidade</td><td><img class="ico" data-aws="architecture-service/AmazonCloudWatch" alt="">CloudWatch · AgentCore Observability</td><td>Logs, traces e tokens de cada conversa</td><td><code>app/agent/agent.py</code></td></tr>
+  <tr><td>Permissões</td><td><img class="ico" data-aws="architecture-service/AWSIdentityandAccessManagement" alt="">IAM</td><td>Um papel para o agente, um para o Gateway e um para a Lambda</td><td><code>infra/completa/template.yaml</code></td></tr>
+  <tr><td>Infraestrutura</td><td><img class="ico" data-aws="architecture-service/AWSCloudFormation" alt="">CloudFormation</td><td>Cria e remove tudo de uma vez</td><td><code>infra/</code></td></tr>
+</table>
+</div>
+</section>
+
+<section class="secao" id="s2">
+<h2><span class="n">2</span>Os dados e o RAG</h2>
+<p class="sub">São dois tipos de dado, e cada um é usado de um jeito. Tudo é fictício.</p>
+
+<h3>Dados estruturados: a agenda</h3>
+<p>Cinco tabelas no arquivo <code>data/bases.xlsx</code>, ligadas por id. Viram um JSON no S3. O agente consulta com as ferramentas da agenda, porque aqui a resposta tem que ser exata.</p>
+<div class="rolagem">
+<table>
+  <tr><th>Tabela</th><th>Linhas</th><th>Um exemplo</th><th>Liga com</th></tr>
+  <tr><td><b>pacientes</b></td><td>5</td><td>P-001 · Helena Duarte · Saúde Mais · Unidade Centro</td><td>–</td></tr>
+  <tr><td><b>medicos</b></td><td>6</td><td>M-01 · Dr. Paulo Moura · Cardiologia · Unidade Centro</td><td>–</td></tr>
+  <tr><td><b>consultas</b></td><td>7</td><td>C-1001 · P-001 · M-01 · 2026-10-08 · 14:00 · agendada</td><td>pacientes, medicos</td></tr>
+  <tr><td><b>horarios</b></td><td>18</td><td>H-001 · M-01 · 2026-10-08 · 14:00 · ocupado</td><td>medicos</td></tr>
+  <tr><td><b>exames</b></td><td>7</td><td>E-501 · P-001 · Glicemia de jejum · M-01 · 2026-09-22 · a coletar</td><td>pacientes, medicos</td></tr>
+</table>
+</div>
+
+<h3>Textos: a base de conhecimento do RAG</h3>
+<p>Quinze orientações curtas, em <code>data/conhecimento.xlsx</code>. O modelo nunca leu esses textos, então a resposta sai deles, e não da memória do modelo. Cada linha vira um vetor no S3 Vectors.</p>
+<details class="card"><summary>Ver os 15 textos</summary>
+<div class="rolagem" style="margin-top:12px">
+<table>
+  <tr><th>Id</th><th>Categoria</th><th>Título</th><th>Texto</th></tr>
+  <tr><td class="id">D-01</td><td><span class="tag">preparo_exame</span></td><td>Preparo: glicemia de jejum</td><td>Jejum de 8 horas antes da coleta. Água é permitida. Não suspenda medicamentos de uso contínuo sem orientação do seu médico. A coleta de sangue acontece das 6h30 às 10h.</td></tr>
+  <tr><td class="id">D-02</td><td><span class="tag">preparo_exame</span></td><td>Preparo: hemograma completo</td><td>Não exige jejum. Pode ser coletado junto com outros exames de sangue. Informe na recepção os medicamentos que você usa.</td></tr>
+  <tr><td class="id">D-03</td><td><span class="tag">preparo_exame</span></td><td>Preparo: perfil lipídico (colesterol e triglicerídeos)</td><td>O jejum não é obrigatório, a não ser que o médico peça. Mantenha a alimentação habitual e evite bebida alcoólica nas 72 horas anteriores.</td></tr>
+  <tr><td class="id">D-04</td><td><span class="tag">preparo_exame</span></td><td>Preparo: ecocardiograma</td><td>Não exige preparo nem jejum. Use roupa confortável. O exame dura cerca de 40 minutos.</td></tr>
+  <tr><td class="id">D-05</td><td><span class="tag">preparo_exame</span></td><td>Preparo: teste ergométrico</td><td>Use roupa e tênis confortáveis. Faça uma refeição leve até 2 horas antes. Leve a lista dos medicamentos que você usa e não suspenda nenhum sem orientação do seu médico.</td></tr>
+  <tr><td class="id">D-06</td><td><span class="tag">preparo_exame</span></td><td>Preparo: urina tipo 1</td><td>Colete a primeira urina da manhã, ou depois de pelo menos 2 horas sem urinar. Faça a higiene íntima, despreze o primeiro jato e entregue o frasco em até 1 hora.</td></tr>
+  <tr><td class="id">D-07</td><td><span class="tag">preparo_exame</span></td><td>Preparo: raio-X</td><td>Não exige preparo. Retire objetos de metal da região do exame. Avise a equipe em caso de gravidez ou suspeita de gravidez.</td></tr>
+  <tr><td class="id">D-08</td><td><span class="tag">preparo_exame</span></td><td>Preparo: ultrassom de abdome total</td><td>Jejum de 6 horas. Uma hora antes do exame, beba 4 copos de água e não urine até a realização.</td></tr>
+  <tr><td class="id">D-09</td><td><span class="tag">agenda</span></td><td>Regras para remarcar consultas</td><td>A consulta pode ser remarcada sem custo até 24 horas antes, pela central, pelo app ou pelo assistente virtual. Com menos de 24 horas, só pela central com um atendente. Cada consulta pode ser remarcada até 2 vezes.</td></tr>
+  <tr><td class="id">D-10</td><td><span class="tag">agenda</span></td><td>Faltas e cancelamentos</td><td>Avise com antecedência se não puder comparecer. Duas faltas sem aviso em 6 meses suspendem o agendamento online por 30 dias.</td></tr>
+  <tr><td class="id">D-11</td><td><span class="tag">atendimento</span></td><td>Documentos para a consulta ou exame</td><td>Leve documento oficial com foto, a carteirinha do convênio e, para exames, o pedido médico. Chegue 15 minutos antes do horário marcado.</td></tr>
+  <tr><td class="id">D-12</td><td><span class="tag">convenio</span></td><td>Troca de convênio</td><td>A troca de convênio é feita só por um atendente, na recepção ou pela central, com a carteirinha nova em mãos. O assistente virtual não altera dados de convênio.</td></tr>
+  <tr><td class="id">D-13</td><td><span class="tag">atendimento</span></td><td>Horário de funcionamento das unidades</td><td>Unidade Centro: segunda a sexta, das 7h às 19h, e sábado, das 7h às 12h. Unidade Norte: segunda a sexta, das 7h às 18h. Coleta de sangue nas duas unidades: das 6h30 às 10h.</td></tr>
+  <tr><td class="id">D-14</td><td><span class="tag">atendimento</span></td><td>Acompanhantes</td><td>Cada paciente pode ter 1 acompanhante. Menores de 18 anos devem estar com o responsável legal.</td></tr>
+  <tr><td class="id">D-15</td><td><span class="tag">atendimento</span></td><td>Resultados de exames</td><td>Os resultados ficam disponíveis no app em até 3 dias úteis; exames de imagem, em até 5 dias úteis. O assistente virtual não interpreta resultados: dúvidas sobre eles são com o seu médico.</td></tr>
+</table>
+</div>
+</details>
+<p style="margin-top:10px; color:var(--muted); font-size:.9rem">Fontes: Manual de Preparo de Exames (D-01 a D-08) e Manual do Paciente (D-09 a D-15), ambos da Rede Pulso, fictícios.</p>
+
+<h3>Como a busca nos textos funciona</h3>
+<p>RAG em dois tempos: preparar antes, buscar na hora.</p>
+<div class="tempos">
+  <div class="card">
+    <div class="rotulo">Antes · uma vez</div>
+    <ol class="passos">
+      <li>Lê os 15 textos do Excel.</li>
+      <li>O <b>Cohere Embed v4</b> transforma cada texto em 1.024 números: a posição dele no "mapa dos significados".</li>
+      <li>Grava os 15 vetores no <b>S3 Vectors</b>, com título, texto e fonte.</li>
+    </ol>
+    <pre><code>agente-agendamento/.venv/bin/python agente-agendamento/data/prepare.py</code></pre>
+  </div>
+  <div class="card">
+    <div class="rotulo">Na hora · a cada pergunta</div>
+    <ol class="passos">
+      <li>A pergunta vira um vetor, com o mesmo modelo.</li>
+      <li>O S3 Vectors devolve os textos mais próximos no mapa.</li>
+      <li>Os trechos entram no contexto do modelo.</li>
+      <li>O modelo responde só com o que recebeu e cita a fonte.</li>
+    </ol>
+  </div>
+</div>
+
+<h3>Um exemplo real</h3>
+<div class="card">
+  <p><b>Pergunta:</b> "posso tomar café antes do exame de glicemia?"</p>
+  <p>Repare: a pergunta não tem a palavra "jejum". A busca é por significado, não por palavra.</p>
+  <div class="rolagem" style="margin-top:10px">
+  <table>
+    <tr><th>Texto encontrado</th><th>Similaridade</th></tr>
+    <tr><td><b>Preparo: glicemia de jejum</b><br>Jejum de 8 horas antes da coleta. Água é permitida. Não suspenda medicamentos de uso contínuo sem orientação do seu médico. A coleta de sangue acontece das 6h30 às 10h.</td>
+        <td>0,472<div class="barra" style="width:47%"></div></td></tr>
+    <tr><td><b>Preparo: perfil lipídico (colesterol e triglicerídeos)</b><br>O jejum não é obrigatório, a não ser que o médico peça. Mantenha a alimentação habitual e evite bebida alcoólica nas 72 horas anteriores.</td>
+        <td>0,395<div class="barra" style="width:39%"></div></td></tr>
+  </table>
+  </div>
+  <p style="margin-top:14px"><b>Resposta do agente:</b> "A glicemia de jejum pede jejum de 8 horas antes da coleta. Água é permitida. (Fonte: Manual de Preparo de Exames · Rede Pulso)"</p>
+</div>
+<p>Similaridade vai de 0 a 1: quanto mais perto de 1, mais parecido o significado. No código: <code>app/agent/rag.py</code> (indexar e buscar) e <code>app/agent/tools/guidelines.py</code> (a ferramenta <code>consultar_orientacoes</code>).</p>
+</section>
+
+<section class="secao" id="s3">
+<h2><span class="n">3</span>Uma conversa, volta por volta</h2>
+<p class="sub">O loop em ação, com a paciente Helena Duarte (P-001). As chamadas e os resultados são os do projeto.</p>
+
+<div class="card">
+  <div class="volta"><div class="quem p">Paciente</div><p class="fala">"Preciso remarcar a consulta de cardiologia."</p></div>
+
+  <div class="volta"><div class="quem a">Agente pensa</div><p class="fala">Preciso achar a consulta atual dela.</p></div>
+  <div class="volta"><div class="quem f">Ferramenta</div><div>
+    <code>buscar_consultas(paciente_id="P-001")</code>
+    <pre><code>{"consulta_id": "C-1001", "data": "2026-10-08", "hora": "14:00",
+ "medico": "Dr. Paulo Moura", "especialidade": "Cardiologia", "unidade": "Unidade Centro"}</code></pre></div></div>
+
+  <div class="volta"><div class="quem a">Agente pensa</div><p class="fala">Agora preciso de horários livres de cardiologia.</p></div>
+  <div class="volta"><div class="quem f">Ferramenta</div><div>
+    <code>buscar_horarios(especialidade="Cardiologia")</code>
+    <pre><code>{"horario_id": "H-002", "data": "2026-10-13", "hora": "09:00", "medico": "Dr. Paulo Moura"}
+{"horario_id": "H-003", "data": "2026-10-14", "hora": "16:30", "medico": "Dr. Paulo Moura"}
+{"horario_id": "H-006", "data": "2026-10-15", "hora": "10:00", "medico": "Dra. Beatriz Lima"}</code></pre></div></div>
+
+  <div class="volta"><div class="quem a">Agente</div><p class="fala">"Sua consulta é quinta, 08/10, às 14h. Opções livres: 1. terça, 13/10, às 9h · 2. quarta, 14/10, às 16h30 · 3. quinta, 15/10, às 10h. Qual você prefere?"</p></div>
+  <div class="volta"><div class="quem p">Paciente</div><p class="fala">"Pode ser a primeira opção."</p></div>
+  <div class="volta"><div class="quem a">Agente</div><p class="fala">"Vou remarcar para terça, 13/10, às 9h, com Dr. Paulo Moura. Posso confirmar?" <b>Nada foi alterado ainda.</b></p></div>
+  <div class="volta"><div class="quem h">Humano</div><p class="fala">"Sim, confirmo."</p></div>
+
+  <div class="volta"><div class="quem f">Ferramenta</div><div>
+    <code>remarcar_consulta(paciente_id="P-001", consulta_id="C-1001", horario_id="H-002", confirmado_pelo_paciente=true)</code>
+    <pre><code>{"ok": true, "consulta": {"consulta_id": "C-1001", "data": "2026-10-13", "hora": "09:00"}}</code></pre></div></div>
+  <div class="volta"><div class="quem a">Agente</div><p class="fala">"Pronto, Helena! Consulta remarcada: terça, 13/10, às 9h, com Dr. Paulo Moura, na Unidade Centro."</p></div>
+</div>
+
+<div class="aviso">
+  <p><b>Humano no loop: o freio de mão fica com a pessoa.</b></p>
+  <p>Ler é seguro, alterar não. Por isso a remarcação tem duas travas. A primeira está no prompt: o agente só chama a ferramenta depois de um "sim" explícito. A segunda está no código (<code>app/schedule/rules.py</code>): sem <code>confirmado_pelo_paciente = true</code>, ou se a consulta for de outro paciente, ou se o horário não estiver livre, nada muda.</p>
+</div>
+
+<h3>Como ele lembra da conversa</h3>
+<p>Cada mensagem é uma chamada nova. O <b>AgentCore Memory</b> guarda o histórico da sessão e devolve tudo ao agente a cada volta. É por isso que "a primeira opção" faz sentido para ele. A memória é de curto prazo e expira em 7 dias.</p>
+</section>
+
+<section class="secao" id="s4">
+<h2><span class="n">4</span>A interface, tela por tela</h2>
+<p class="sub">O chat é o que o paciente veria. O modo debug mostra o que acontece por trás de cada resposta. Clique em um print para ampliar.</p>
+<p>Para abrir a tela: <code>bash agente-agendamento/demo.sh abrir</code>.</p>
+
+<h3>O chat</h3>
+<p>A tela abre só com a conversa. Na barra lateral ficam o <b>paciente</b> (trocar de paciente troca a agenda), o <b>histórico</b> de conversas e o <b>teste do guardrail</b>. Os botões são os pedidos de exemplo.</p>
+<figure class="print">
+  <a href="img/01-chat.png" target="_blank" rel="noopener"><img src="img/01-chat.png" alt="Tela inicial do chat, com os botões de exemplo" loading="lazy"></a>
+  <figcaption>A tela inicial. No Studio, o endereço termina em <code>/proxy/8501/</code>. Na sua máquina, é <code>http://localhost:8501</code>.</figcaption>
+</figure>
+<p>Uma remarcação do começo ao fim: o agente mostra as opções, repete a escolha e só altera depois do "sim".</p>
+<figure class="print">
+  <a href="img/02-conversa.png" target="_blank" rel="noopener"><img src="img/02-conversa.png" alt="Conversa de remarcação de consulta" loading="lazy"></a>
+  <figcaption>A conversa da seção 3, como aparece no chat.</figcaption>
+</figure>
+
+<h3>Modo debug: aba Resposta</h3>
+<p>Ligue o <b>Modo debug</b>, no topo. O painel <b>Por dentro do agente</b> abre ao lado, e cada resposta do chat ganha um resumo: tempo, chamadas ao modelo, ferramentas, tokens e o que o guardrail fez.</p>
+<p><b>Onde foi o tempo</b> reparte a espera entre preparo, modelo, guardrail, ferramentas e rede. É o primeiro lugar para olhar quando uma resposta demora.</p>
+<figure class="print">
+  <a href="img/03-debug-resposta.png" target="_blank" rel="noopener"><img src="img/03-debug-resposta.png" alt="Modo debug, aba Resposta, com a barra de tempos" loading="lazy"></a>
+  <figcaption>A aba Resposta: o resumo, a barra de tempos e o passo a passo.</figcaption>
+</figure>
+<p>O <b>Fluxograma</b> desenha o caminho daquela resposta. É o diagrama da seção 1, com os dados reais: o preparo, o guardrail na entrada, cada volta do loop (modelo e ferramenta) e o guardrail na saída.</p>
+<figure class="print">
+  <a href="img/09-debug-fluxograma.png" target="_blank" rel="noopener"><img src="img/09-debug-fluxograma.png" alt="Fluxograma de uma resposta no modo debug" loading="lazy"></a>
+  <figcaption>O loop em uma resposta: o modelo pede <code>remarcar_consulta</code>, o agente executa e o modelo escreve a resposta.</figcaption>
+</figure>
+
+<h3>Aba Prompt</h3>
+<p>Tudo o que o modelo recebeu naquela chamada: o system prompt (com a versão), o histórico, a mensagem do paciente e a descrição das ferramentas. Se o agente fez algo inesperado, a explicação quase sempre está aqui.</p>
+<figure class="print">
+  <a href="img/04-debug-prompt.png" target="_blank" rel="noopener"><img src="img/04-debug-prompt.png" alt="Modo debug, aba Prompt" loading="lazy"></a>
+  <figcaption>A aba Prompt.</figcaption>
+</figure>
+
+<h3>Aba Memória</h3>
+<p>O que o AgentCore Memory guardou da conversa. A memória de curto prazo está ligada, e a de longo prazo, desligada.</p>
+<figure class="print">
+  <a href="img/05-debug-memoria.png" target="_blank" rel="noopener"><img src="img/05-debug-memoria.png" alt="Modo debug, aba Memória" loading="lazy"></a>
+  <figcaption>A aba Memória.</figcaption>
+</figure>
+
+<h3>Aba Dados</h3>
+<p>A agenda do paciente, lida do S3, e os 15 textos do RAG. Depois de uma remarcação, a consulta aparece aqui com a data nova.</p>
+<figure class="print">
+  <a href="img/06-debug-dados.png" target="_blank" rel="noopener"><img src="img/06-debug-dados.png" alt="Modo debug, aba Dados" loading="lazy"></a>
+  <figcaption>A aba Dados.</figcaption>
+</figure>
+
+<h3>Aba Vetores</h3>
+<p>Os 15 vetores do S3 Vectors em um mapa de duas dimensões. Textos de assunto parecido ficam perto. Digite uma pergunta para ver onde ela cai: os pontos vizinhos são os que a busca do RAG devolve.</p>
+<figure class="print">
+  <a href="img/07-debug-vetores.png" target="_blank" rel="noopener"><img src="img/07-debug-vetores.png" alt="Modo debug, aba Vetores, com o mapa dos significados" loading="lazy"></a>
+  <figcaption>A aba Vetores: o mapa dos significados da seção 2.</figcaption>
+</figure>
+
+<h3>Aba Na AWS</h3>
+<p>Um link para cada peça no console da AWS. Nada é simulado: o prompt, o guardrail, a memória e os dados das outras abas são recursos reais da sua stack. A aba traz também o id da sessão, para achar a conversa na observabilidade (seção 5).</p>
+<figure class="print">
+  <a href="img/08-debug-aws.png" target="_blank" rel="noopener"><img src="img/08-debug-aws.png" alt="Modo debug, aba Na AWS, com os links para o console" loading="lazy"></a>
+  <figcaption>A aba Na AWS.</figcaption>
+</figure>
+
+<h3>O guardrail em ação</h3>
+<p>Em <b>Testar o guardrail</b>, na barra lateral, há três pedidos prontos. Conselho clínico e ataque de prompt são bloqueados na entrada, sem chamar o modelo. O CPF passa, mas sai mascarado na resposta. A etiqueta de cada resposta diz o que aconteceu: passou, mascarou ou bloqueou.</p>
+<figure class="print">
+  <a href="img/10-guardrail.png" target="_blank" rel="noopener"><img src="img/10-guardrail.png" alt="Resposta com o CPF mascarado pelo guardrail" loading="lazy"></a>
+  <figcaption>O CPF mascarado na resposta, com a etiqueta <b>guardrail mascarou</b>.</figcaption>
+</figure>
+</section>
+
+<section class="secao" id="s5">
+<h2><span class="n">5</span>Observabilidade</h2>
+<p class="sub">Como achar, no console, tudo o que aconteceu em uma conversa.</p>
+
+<div class="eq">
+  <div><b>Sessão</b><span>Uma conversa inteira. É o id que o chat envia em toda mensagem.</span></div>
+  <div><b>Trace</b><span>Uma mensagem do paciente, do pedido até a resposta.</span></div>
+  <div><b>Span</b><span>Um passo dentro do trace: uma chamada ao modelo, uma ferramenta.</span></div>
+</div>
+<p style="margin-top:14px">Um trace nunca cobre a conversa toda, porque cada mensagem é uma chamada nova ao agente. Quem junta os traces é a <b>sessão</b>.</p>
+
+<h3>Um trace, lido de cima para baixo</h3>
+<div class="card">
+<ul class="arvore">
+  <li><code>POST /invocations</code> <span>a mensagem chegou ao Runtime</span>
+    <ul>
+      <li><code>ferramentas</code> <span>lista as ferramentas do Gateway</span></li>
+      <li><code>buscar_prompt</code> <span>Prompt Management</span></li>
+      <li><code>ler_memoria</code> <span>AgentCore Memory</span></li>
+      <li><code>invoke_agent central-de-agendamento</code> <span>o loop do agente</span>
+        <ul>
+          <li><code>execute_event_loop_cycle</code> <span>loop 1</span>
+            <ul>
+              <li><code>chat</code> <span>o modelo pede uma ferramenta. Aqui estão o prompt, a resposta e os tokens</span></li>
+              <li><code>execute_tool agenda___buscar_consultas</code> <span>argumentos e resultado</span></li>
+            </ul>
+          </li>
+          <li><code>execute_event_loop_cycle</code> <span>loop 2</span>
+            <ul><li><code>chat</code> <span>o modelo escreve a resposta final</span></li></ul>
+          </li>
+        </ul>
+      </li>
+      <li><code>guardrail: input passou, output passou</code> <span>o que o guardrail fez: passou, mascarou ou bloqueou</span></li>
+    </ul>
+  </li>
+</ul>
+</div>
+
+<h3>No console</h3>
+<ol class="passos">
+  <li>No chat, abra o Modo debug e a aba <b>Na AWS</b>. Copie o id da sessão e clique em <b>Observabilidade</b>.</li>
+  <li>Abra o seu agente (<b>pulso_agente</b>, ou o seu prefixo no lugar de <code>pulso</code>) e vá em <b>Sessions</b>. Procure pelo id: cada linha de dentro é uma mensagem.</li>
+  <li>Abra um trace para ver os spans acima, com o tempo de cada um. Os dados levam cerca de um minuto para aparecer.</li>
+</ol>
+
+<h3>Como foi configurado</h3>
+<div class="rolagem">
+<table>
+  <tr><th>O quê</th><th>Onde</th><th>Para quê</th></tr>
+  <tr><td>Transaction Search ligado na conta</td><td><code>infra/completa/deploy.sh</code></td><td>Sem ele, os traces não chegam ao CloudWatch</td></tr>
+  <tr><td>Nome do agente, <code>session.id</code>, <code>user.id</code> e <code>prompt.versao</code></td><td><code>app/agent/agent.py</code></td><td>Dá para filtrar por conversa, por paciente e por versão do prompt</td></tr>
+  <tr><td>Um span por etapa: <code>ferramentas</code>, <code>buscar_prompt</code>, <code>ler_memoria</code></td><td><code>app/agent/agent.py</code></td><td>Mostra onde foi o tempo antes do modelo</td></tr>
+  <tr><td>Um span <code>guardrail</code>, com a situação no nome</td><td><code>app/agent/agent.py</code></td><td>Mostra se o guardrail passou, mascarou ou bloqueou, sem abrir os detalhes</td></tr>
+  <tr><td>Instrumentação automática de rede desligada</td><td><code>infra/completa/template.yaml</code></td><td>Tira os spans repetidos: o trace cai de mais de 20 linhas para cerca de 11</td></tr>
+</table>
+</div>
+<p style="margin-top:12px">Os logs do agente ficam no CloudWatch Logs, no grupo <code>/aws/bedrock-agentcore/runtimes/pulso_agente-…-DEFAULT</code>: uma linha por resposta, com o tempo de cada etapa.</p>
+</section>
+
+<div class="passo"><button type="button" id="ant">← Anterior</button><button type="button" id="prox">Próxima →</button></div>
+
+<footer>Pulso.AI · Trilha Tech · Módulos 2 e 3 · dados fictícios, para aula.</footer>
+</main>
+<script>
+  (function () {
+    // logos oficiais da AWS (pacote aws-icons) e ícones de cada peça (Lucide), pela jsDelivr. Sem internet, fica só o texto.
+    var cdn = "https://cdn.jsdelivr.net/npm/";
+    document.querySelectorAll("img[data-aws]").forEach(function (i) {
+      i.src = cdn + "aws-icons@3.3.0/icons/" + i.dataset.aws + ".svg";
+      i.onerror = function () { i.remove(); };
+    });
+    var lucide = {};
+    document.querySelectorAll("[data-ico]").forEach(function (e) {
+      var n = e.dataset.ico;
+      lucide[n] = lucide[n] || fetch(cdn + "lucide-static@1.51.0/icons/" + n + ".svg").then(function (r) { return r.text(); });
+      lucide[n].then(function (t) {
+        var svg = new DOMParser().parseFromString(t, "image/svg+xml").documentElement;
+        svg.setAttribute("width", 22); svg.setAttribute("height", 22);
+        e.appendChild(document.importNode(svg, true));
+      }).catch(function () {});
+    });
+    var secoes = [].slice.call(document.querySelectorAll(".secao"));
+    var links = [].slice.call(document.querySelectorAll(".menu a"));
+    var hamb = document.getElementById("hamb"), ant = document.getElementById("ant"), prox = document.getElementById("prox");
+    var atual = 0;
+    function menu(aberto) {
+      document.body.classList.toggle("aberto", aberto);
+      hamb.setAttribute("aria-expanded", aberto);
+    }
+    function mostrar(i, rolar) {
+      atual = Math.max(0, Math.min(secoes.length - 1, i));
+      secoes.forEach(function (s, k) { s.classList.toggle("ativa", k === atual); });
+      links.forEach(function (a, k) { a.classList.toggle("ativo", k === atual); });
+      ant.hidden = atual === 0;
+      prox.hidden = atual === secoes.length - 1;
+      if (rolar) window.scrollTo(0, 0);
+    }
+    function daUrl() {
+      var i = secoes.findIndex(function (s) { return "#" + s.id === location.hash; });
+      mostrar(i < 0 ? 0 : i, true);
+    }
+    hamb.addEventListener("click", function () { menu(!document.body.classList.contains("aberto")); });
+    document.getElementById("veu").addEventListener("click", function () { menu(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") menu(false); });
+    links.forEach(function (a) {
+      a.addEventListener("click", function () { if (window.innerWidth < 1100) menu(false); });
+    });
+    ant.addEventListener("click", function () { location.hash = "#" + secoes[atual - 1].id; });
+    prox.addEventListener("click", function () { location.hash = "#" + secoes[atual + 1].id; });
+    window.addEventListener("hashchange", daUrl);
+    daUrl();
+    menu(window.innerWidth >= 1100);
+  })();
+</script>
+</body>
+</html>

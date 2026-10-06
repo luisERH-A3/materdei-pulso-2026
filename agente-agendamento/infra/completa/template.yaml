@@ -1,0 +1,533 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Pulso · agente de agendamento com RAG, 100% serverless. AgentCore Runtime + Memory + Gateway,
+  Lambda, S3, S3 Vectors, Bedrock (GPT-5.6 Luna, Cohere Embed v4 e Guardrails). Todas as permissões IAM estão aqui,
+  com o mínimo necessário para cada peça.
+
+# -------------------------------------------------------------------------------------------------
+# Mapa de permissões (quem pode o quê)
+#
+#   AgentePapel (AgentCore Runtime)   chama os modelos, aplica o guardrail, busca no S3 Vectors, usa o Gateway e o Memory,
+#                                     escreve logs, métricas e traces, lê o próprio pacote de código
+#   GatewayPapel (AgentCore Gateway)  invoca a Lambda da agenda, e só ela
+#   AgendaFuncaoPapel (Lambda)        lê e grava bases/ no bucket de dados, escreve o próprio log
+#
+# -------------------------------------------------------------------------------------------------
+
+Parameters:
+  Projeto:
+    Type: String
+    Default: pulso
+    AllowedPattern: "^[a-z][a-z0-9]{2,11}$"
+    Description: Prefixo de todos os nomes (minúsculas e números, 3 a 12 caracteres).
+  ArtefatosBucket:
+    Type: String
+    Description: Bucket com os pacotes .zip do Runtime e da Lambda (criado por infra/completa/deploy.sh).
+  RuntimeCodigoChave:
+    Type: String
+    Default: runtime.zip
+    Description: Chave do .zip do agente (arm64, com dependências). Mudar a chave publica uma nova versão.
+  LambdaCodigoChave:
+    Type: String
+    Default: agenda.zip
+  ModeloConversa:
+    Type: String
+    Default: us.openai.gpt-5.6-luna
+    Description: Id do modelo de conversa no Bedrock, ou de um perfil de inferência (us.*).
+  ModeloConversaBase:
+    Type: String
+    Default: openai.gpt-5.6-luna
+    Description: Id do modelo de base por trás do perfil, usado nas permissões.
+  ModeloReserva:
+    Type: String
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: Modelo de reserva (perfil us.*), usado se o principal falhar. Precisa estar liberado na conta.
+  ModeloReservaBase:
+    Type: String
+    Default: anthropic.claude-haiku-4-5-20251001-v1:0
+  ModeloEmbedding:
+    Type: String
+    Default: cohere.embed-v4:0
+  DimensaoEmbedding:
+    Type: Number
+    Default: 1024
+    AllowedValues: [256, 512, 1024, 1536]
+
+Resources:
+  # =============================================================================== DADOS E RAG
+  DadosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Projeto}-dados-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Enabled # cada remarcação gera uma versão nova do bases.json: dá para auditar e voltar
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  VetoresBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      VectorBucketName: !Sub "${Projeto}-vetores-${AWS::AccountId}"
+
+  VetoresIndice:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketArn: !GetAtt VetoresBucket.VectorBucketArn
+      IndexName: conhecimento
+      DataType: float32
+      Dimension: !Ref DimensaoEmbedding # precisa ser igual ao output_dimension do Cohere
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys: [texto, fonte] # voltam na busca, mas não servem de filtro
+
+  # ============================================================== LAMBDA DA AGENDA (FERRAMENTAS)
+  AgendaLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Projeto}-agenda"
+      RetentionInDays: 3
+
+  AgendaFuncaoPapel:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Projeto}-agenda-lambda"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: agenda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LerEGravarBases
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${DadosBucket.Arn}/bases/*"
+              - Sid: EscreverLog
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Projeto}-agenda:*"
+
+  AgendaFuncao:
+    Type: AWS::Lambda::Function
+    DependsOn: AgendaLogs
+    Properties:
+      FunctionName: !Sub "${Projeto}-agenda"
+      Description: Ferramentas da agenda publicadas pelo AgentCore Gateway.
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: handler.lambda_handler
+      Role: !GetAtt AgendaFuncaoPapel.Arn
+      MemorySize: 256
+      Timeout: 15
+      Code:
+        S3Bucket: !Ref ArtefatosBucket
+        S3Key: !Ref LambdaCodigoChave
+      Environment:
+        Variables:
+          DADOS_BUCKET: !Ref DadosBucket
+          DADOS_CHAVE: bases/bases.json
+
+  # ===================================================================== AGENTCORE GATEWAY (MCP)
+  GatewayPapel:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Projeto}-gateway"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+              ArnLike: { "aws:SourceArn": !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*" }
+      Policies:
+        - PolicyName: invocar-agenda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: InvocarLambdaDaAgenda
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: [!GetAtt AgendaFuncao.Arn, !Sub "${AgendaFuncao.Arn}:*"]
+
+  Gateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      Name: !Sub "${Projeto}-gateway"
+      Description: Publica a Lambda da agenda como ferramentas MCP.
+      ProtocolType: MCP
+      AuthorizerType: AWS_IAM # quem chama assina com SigV4 e precisa de bedrock-agentcore:InvokeGateway
+      RoleArn: !GetAtt GatewayPapel.Arn
+      ExceptionLevel: DEBUG # mostra o erro da ferramenta para o agente; ótimo em aula; num sistema real, tire
+
+  AgendaAlvo:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      GatewayIdentifier: !GetAtt Gateway.GatewayIdentifier
+      Name: agenda # o agente vê as ferramentas como agenda___<nome>
+      Description: Consultas, horários livres, exames pedidos e remarcação.
+      CredentialProviderConfigurations:
+        - CredentialProviderType: GATEWAY_IAM_ROLE # o Gateway usa o GatewayPapel para chamar a Lambda
+      TargetConfiguration:
+        Mcp:
+          Lambda:
+            LambdaArn: !GetAtt AgendaFuncao.Arn
+            ToolSchema:
+              InlinePayload:
+                - Name: buscar_consultas
+                  Description: >-
+                    Lista as consultas agendadas do paciente, com médico, especialidade, unidade, data e hora.
+                    Use quando o paciente perguntar das próprias consultas ou quiser remarcar. Não use para exames.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      paciente_id: { Type: string, Description: "Id do paciente da conversa, por exemplo P-001." }
+                    Required: [paciente_id]
+                - Name: buscar_horarios
+                  Description: >-
+                    Lista até 6 horários livres de uma especialidade, a partir de uma data.
+                    Use para oferecer opções de remarcação. Não use para exames.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      especialidade: { Type: string, Description: "Por exemplo Cardiologia." }
+                      a_partir_de: { Type: string, Description: "Data inicial no formato AAAA-MM-DD. Opcional." }
+                    Required: [especialidade]
+                - Name: buscar_exames
+                  Description: >-
+                    Lista os exames pedidos para o paciente, com quem pediu e a situação.
+                    Para preparo de exame (jejum etc.), use consultar_orientacoes.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      paciente_id: { Type: string, Description: "Id do paciente da conversa." }
+                    Required: [paciente_id]
+                - Name: remarcar_consulta
+                  Description: >-
+                    Remarca uma consulta para um horário livre da mesma especialidade. ALTERA A AGENDA:
+                    só use depois que o paciente escolher o horário e confirmar com um sim explícito.
+                  InputSchema:
+                    Type: object
+                    Properties:
+                      paciente_id: { Type: string, Description: "Id do paciente da conversa." }
+                      consulta_id: { Type: string, Description: "Por exemplo C-1001." }
+                      horario_id: { Type: string, Description: "Id do horário escolhido, por exemplo H-002." }
+                      confirmado_pelo_paciente: { Type: boolean, Description: "true só se o paciente confirmou." }
+                    Required: [paciente_id, consulta_id, horario_id, confirmado_pelo_paciente]
+
+  # ================================================================================ GUARDRAIL
+  # Um filtro antes e outro depois do modelo (Módulo 2). Entra como parâmetro da chamada ao modelo
+  # (guardrailConfig), em app/agent/model.py.
+  Protecao:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub "${Projeto}-protecao"
+      Description: Filtros da central de agendamento - ataque de prompt, conselho clínico e CPF.
+      BlockedInputMessaging: Não posso ajudar com esse pedido por aqui. Para dúvidas de saúde, fale com o seu médico. Para o resto, ligue para a central - 0800 000 0000.
+      BlockedOutputsMessaging: Não posso enviar essa resposta. Ligue para a central - 0800 000 0000.
+      CrossRegionConfig: # o nível STANDARD entende português e exige o perfil entre regiões dos EUA
+        GuardrailProfileArn: !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail-profile/us.guardrail.v1:0"
+      ContentPolicyConfig:
+        ContentFiltersTierConfig:
+          TierName: STANDARD
+        FiltersConfig:
+          - { Type: PROMPT_ATTACK, InputStrength: HIGH, OutputStrength: NONE } # "ignore as instruções..."
+          - { Type: HATE, InputStrength: HIGH, OutputStrength: HIGH }
+          - { Type: INSULTS, InputStrength: HIGH, OutputStrength: HIGH }
+          - { Type: SEXUAL, InputStrength: HIGH, OutputStrength: HIGH }
+          - { Type: VIOLENCE, InputStrength: MEDIUM, OutputStrength: MEDIUM }
+          - { Type: MISCONDUCT, InputStrength: HIGH, OutputStrength: HIGH }
+      TopicPolicyConfig:
+        TopicsTierConfig:
+          TierName: STANDARD
+        TopicsConfig:
+          - Name: Conselho clinico
+            Type: DENY
+            Definition: >-
+              Pedidos de diagnóstico médico, de interpretação de sintomas ou de resultados de exames, e de indicação
+              de remédios, doses ou tratamentos. Não inclui dúvidas sobre o preparo de exames (jejum, o que comer ou
+              beber antes, como água ou café, roupa), nem sobre agenda, consultas, documentos, convênio ou regras da Rede.
+            Examples:
+              - Estou com dor no peito, que remédio eu tomo?
+              - Minha glicemia deu 180, isso é diabetes?
+              - Qual a dose certa do meu remédio de pressão?
+            InputEnabled: true
+            OutputEnabled: false # o agente pode citar o preparo dos exames; a trava é no pedido do paciente
+      SensitiveInformationPolicyConfig:
+        RegexesConfig:
+          - Name: CPF
+            Description: CPF com ou sem pontuação.
+            Pattern: '\d{3}\.?\d{3}\.?\d{3}-?\d{2}'
+            Action: ANONYMIZE # na resposta, o número é trocado por {CPF} (a máscara só vale para a saída)
+
+  # A versão publicada do guardrail: uma cópia que não muda. É ela que o agente usa (guardrailVersion).
+  # Mudou as regras acima? Crie outro recurso de versão (ProtecaoVersao2), para a mudança valer no agente.
+  ProtecaoVersao1:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !GetAtt Protecao.GuardrailId
+      Description: Primeira versão publicada - conselho clínico, ataque de prompt e CPF.
+
+  # ======================================================================== PROMPT MANAGEMENT
+  # O system prompt mora no Bedrock Prompt Management (Módulo 2: prompt como código). O agente busca a última versão
+  # publicada (app/agent/prompt.py). Para mudar o texto: edite no console e crie uma versão. Não precisa de deploy.
+  PromptAgente:
+    Type: AWS::Bedrock::Prompt
+    Properties:
+      Name: !Sub "${Projeto}-agente"
+      Description: System prompt do agente da central de agendamento.
+      DefaultVariant: padrao
+      Variants:
+        - Name: padrao
+          TemplateType: TEXT
+          TemplateConfiguration:
+            Text:
+              InputVariables:
+                - Name: paciente_id
+                - Name: paciente_nome
+                - Name: hoje
+              Text: |
+                  <papel>
+                  Você é o assistente virtual da Central de Agendamento da Rede Pulso de Saúde (rede fictícia, usada em aula).
+                  Você atende pacientes por mensagem: consultas, remarcações, exames pedidos e orientações de preparo.
+                  </papel>
+
+                  <paciente>
+                  id: {{paciente_id}}
+                  nome: {{paciente_nome}}
+                  hoje: {{hoje}}
+                  </paciente>
+
+                  <regras>
+                  1. Use sempre o id do paciente acima nas ferramentas. Nunca consulte nem altere dados de outra pessoa.
+                  2. Consultas, horários livres e exames pedidos: use as ferramentas da agenda. Nunca invente datas, horários ou nomes.
+                  3. Preparo de exames, documentos, horários das unidades e regras da Rede: use a ferramenta consultar_orientacoes
+                     e responda só com o que ela devolver, citando a fonte entre parênteses. Se nada servir, diga que não sabe e
+                     indique a central (0800 000 0000, número fictício).
+                  4. Remarcação: mostre até 3 opções de horário, espere o paciente escolher e confirmar com um "sim" explícito.
+                     Só então chame remarcar_consulta com confirmado_pelo_paciente = true. Confirme o novo horário no fim.
+                  5. Troca de convênio e qualquer pedido fora da agenda: explique que um atendente faz isso e indique a central.
+                  6. Não dê diagnóstico, opinião clínica nem orientação sobre remédios. Para isso, o paciente fala com o médico.
+                  7. Para usar uma ferramenta, chame a ferramenta de verdade. Nunca escreva o nome nem os argumentos de uma
+                     ferramenta no texto da resposta: o paciente só deve ler o resultado, em linguagem simples.
+                  8. Se o paciente pedir para conferir um dado que ele mesmo acabou de escrever, repita o dado como ele
+                     escreveu. O filtro de saída (guardrail) cuida de mascarar o que for sensível.
+                  </regras>
+
+                  <formato>
+                  Português do Brasil. Seja claro, gentil e objetivo: frases curtas, no máximo 6 linhas.
+                  Datas como "quinta, 08/10, às 14h".
+                  Nunca use travessão (—) nem meia-risca (–). Para separar ideias, use ponto ou vírgula.
+                  Para listar, escreva um item por linha.
+                  </formato>
+
+                  <raciocinio>
+                  Pense sempre em português do Brasil. Todo o seu raciocínio interno, antes de responder ou de chamar uma
+                  ferramenta, deve ser escrito em português, nunca em inglês. Esse raciocínio é exibido em aula para os alunos.
+                  </raciocinio>
+
+  PromptAgenteVersao1:
+    Type: AWS::Bedrock::PromptVersion
+    Properties:
+      PromptArn: !GetAtt PromptAgente.Arn
+      Description: Primeira versão publicada. Era a v4 quando o prompt ficava no código.
+
+  PromptAgenteVersao2:
+    Type: AWS::Bedrock::PromptVersion
+    DependsOn: PromptAgenteVersao1
+    Properties:
+      PromptArn: !GetAtt PromptAgente.Arn
+      Description: Regra 8 - repetir o dado que o paciente pede para conferir, e deixar a máscara com o guardrail.
+
+  # ========================================================================== AGENTCORE MEMORY
+  Memoria:
+    Type: AWS::BedrockAgentCore::Memory
+    Properties:
+      Name: !Sub "${Projeto}_memoria"
+      Description: Memória de curto prazo das conversas (sem estratégias de longo prazo, por LGPD).
+      EventExpiryDuration: 7 # dias
+
+  # ========================================================================= AGENTCORE RUNTIME
+  AgentePapel:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Projeto}-agente-runtime"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+              ArnLike: { "aws:SourceArn": !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*" }
+      Policies:
+        - PolicyName: agente
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # ---- pacote de código (direct code deploy)
+              - Sid: LerPacoteDoAgente
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${ArtefatosBucket}/${RuntimeCodigoChave}"
+              # ---- modelos no Bedrock
+              - Sid: ConversaPeloPerfilDeInferencia
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream] # Converse e ConverseStream
+                Resource: # o modelo pode ser chamado direto na região ou por um perfil de inferência
+                  - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/${ModeloConversa}"
+                  - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModeloConversa}"
+              - Sid: ConversaNasRegioesDoPerfil
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource: !Sub "arn:aws:bedrock:*::foundation-model/${ModeloConversaBase}"
+                Condition:
+                  StringLike:
+                    "bedrock:InferenceProfileArn": !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModeloConversa}"
+              - Sid: ConversaDeReserva
+                Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+                Resource:
+                  - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModeloReserva}"
+                  - !Sub "arn:aws:bedrock:*::foundation-model/${ModeloReservaBase}"
+              - Sid: EmbeddingsCohere
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/${ModeloEmbedding}"
+              # ---- guardrail (o perfil entre regiões também precisa da permissão)
+              - Sid: AplicarOGuardrail
+                Effect: Allow
+                Action: bedrock:ApplyGuardrail
+                Resource:
+                  - !GetAtt Protecao.GuardrailArn
+                  - !Sub "arn:aws:bedrock:*:${AWS::AccountId}:guardrail-profile/us.guardrail.v1:0"
+              # ---- system prompt, no Bedrock Prompt Management
+              - Sid: LerOPrompt
+                Effect: Allow
+                Action: [bedrock:GetPrompt, bedrock:ListPrompts]
+                Resource: [!GetAtt PromptAgente.Arn, !Sub "${PromptAgente.Arn}:*"]
+              # ---- RAG
+              - Sid: BuscarNoS3Vectors
+                Effect: Allow
+                Action: [s3vectors:QueryVectors, s3vectors:GetVectors] # GetVectors: necessário com returnMetadata
+                Resource: !GetAtt VetoresIndice.IndexArn
+              # ---- AgentCore Gateway e Memory
+              - Sid: UsarOGateway
+                Effect: Allow
+                Action: bedrock-agentcore:InvokeGateway
+                Resource: !GetAtt Gateway.GatewayArn
+              - Sid: UsarAMemoria
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:CreateEvent
+                  - bedrock-agentcore:GetEvent
+                  - bedrock-agentcore:ListEvents
+                  - bedrock-agentcore:ListSessions
+                  - bedrock-agentcore:GetMemory
+                Resource: !GetAtt Memoria.MemoryArn
+              # ---- identidade do agente (o Runtime pede um token de workload a cada sessão)
+              - Sid: TokenDeIdentidade
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                Resource:
+                  - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default"
+                  - !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/${Projeto}_agente-*"
+              # ---- observabilidade: logs, traces e métricas
+              - Sid: CriarLogs
+                Effect: Allow
+                Action: [logs:CreateLogGroup, logs:DescribeLogStreams]
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*"
+              - Sid: EscreverLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+              - Sid: ListarGruposDeLog
+                Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+              - Sid: Traces
+                Effect: Allow
+                Action: [xray:PutTraceSegments, xray:PutTelemetryRecords, xray:GetSamplingRules, xray:GetSamplingTargets]
+                Resource: "*" # o X-Ray não aceita restrição por recurso nessas ações
+              - Sid: Metricas
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals: { "cloudwatch:namespace": bedrock-agentcore }
+
+  Agente:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Sub "${Projeto}_agente"
+      Description: Agente Strands da central de agendamento (GPT-5.6 Luna + RAG).
+      RoleArn: !GetAtt AgentePapel.Arn
+      AgentRuntimeArtifact:
+        CodeConfiguration: # direct code deploy: .zip no S3, sem container
+          Code:
+            S3:
+              Bucket: !Ref ArtefatosBucket
+              Prefix: !Ref RuntimeCodigoChave
+          Runtime: PYTHON_3_13
+          EntryPoint: [opentelemetry-instrument, main.py]
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: HTTP
+      # Sem AuthorizerConfiguration: a entrada é por IAM (SigV4), como a interface faz com boto3.
+      LifecycleConfiguration:
+        IdleRuntimeSessionTimeout: 900 # 15 min parado e a microVM é encerrada
+        MaxLifetime: 28800 # 8 h no máximo por sessão
+      EnvironmentVariables:
+        REGIAO: !Ref AWS::Region
+        MODELO_CONVERSA: !Ref ModeloConversa
+        MODELO_RESERVA: !Ref ModeloReserva
+        MODELO_EMBEDDING: !Ref ModeloEmbedding
+        DIMENSAO_EMBEDDING: !Ref DimensaoEmbedding
+        VETORES_BUCKET: !Sub "${Projeto}-vetores-${AWS::AccountId}"
+        VETORES_INDICE: conhecimento
+        MEMORIA_ID: !GetAtt Memoria.MemoryId
+        GATEWAY_URL: !GetAtt Gateway.GatewayUrl
+        GUARDRAIL_ID: !GetAtt Protecao.GuardrailId
+        GUARDRAIL_VERSAO: !GetAtt ProtecaoVersao1.Version
+        PROMPT_ID: !GetAtt PromptAgente.Id
+        # Observabilidade: o Strands já registra o agente, cada chamada ao modelo e cada ferramenta.
+        # Desligar as instrumentações automáticas de rede tira os spans repetidos e o ruído do SDK.
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: botocore,boto3,aws_mcp,urllib3,urllib,requests,httpx
+        # Sem métricas OTel: o Strands cria uma métrica customizada (US$ 0,30/mês) para cada ciclo e cada chamada de ferramenta.
+        # Os traces e as sessões no AgentCore Observability continuam; só some o painel de métricas do Strands.
+        OTEL_METRICS_EXPORTER: none
+
+Outputs:
+  PromptId:
+    Value: !GetAtt PromptAgente.Id
+  DadosBucket:
+    Value: !Ref DadosBucket
+  VetoresBucket:
+    Value: !Sub "${Projeto}-vetores-${AWS::AccountId}"
+  VetoresIndice:
+    Value: conhecimento
+  GatewayUrl:
+    Value: !GetAtt Gateway.GatewayUrl
+  MemoriaId:
+    Value: !GetAtt Memoria.MemoryId
+  ProtecaoId:
+    Value: !GetAtt Protecao.GuardrailId
+  ProtecaoVersao:
+    Value: !GetAtt ProtecaoVersao1.Version
+  RuntimeArn:
+    Value: !GetAtt Agente.AgentRuntimeArn

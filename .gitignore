@@ -1,0 +1,23 @@
+# Segredos e configuração local
+.env
+.env.*
+.projeto
+!.env.exemplo
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Gerados ao rodar
+build/
+logs/
+*.log
+
+# Editor e sistema
+.vscode/
+.idea/
+.DS_Store

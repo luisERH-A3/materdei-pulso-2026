@@ -1,0 +1,6 @@
+# Dependências do agente. Vão dentro do .zip do AgentCore Runtime (instaladas para arm64 por infra/completa/deploy.sh)
+boto3>=1.40               # cliente s3vectors
+strands-agents>=1.10      # o agente e o loop
+bedrock-agentcore[strands-agents]>=1.0   # BedrockAgentCoreApp + AgentCore Memory para o Strands
+mcp-proxy-for-aws>=1.0    # MCP com autenticação IAM (SigV4) para o Gateway
+aws-opentelemetry-distro>=0.12           # traces no AgentCore Observability (opentelemetry-instrument)
