@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# A demo inteira em um comando. Rode da raiz do repositório: no terminal do SageMaker Studio (o ambiente da turma)
-# ou na sua máquina (depois do aws login).
+# A demo inteira em um comando. Rode da raiz do repositório, no terminal do JupyterLab (SageMaker Studio).
 #
-#   bash agente-agendamento/demo.sh            implanta tudo na AWS, prepara os dados e abre o chat
-#   bash agente-agendamento/demo.sh abrir      só abre o chat de novo (a demo já está implantada)
+#   export PROJETO=alunomsouza                 o seu prefixo, só na primeira vez
+#   bash agente-agendamento/demo.sh            implanta tudo na AWS, prepara os dados e sobe o chat
+#   bash agente-agendamento/demo.sh abrir      só sobe o chat de novo (a demo já está implantada)
 #   bash agente-agendamento/demo.sh remover    apaga da AWS tudo o que a demo criou
 #
-# No Studio não há login nem instalação: o terminal já está ligado à conta, e o chat abre em outra aba do navegador.
+# Não há login nem instalação: o terminal já está ligado à conta, e o chat abre em outra aba do navegador.
 #
-# Opcionais, antes do comando:  PROJETO=aluno01 (prefixo dos recursos, para dividir uma conta)
-#                               MODELO_CONVERSA=moonshotai.kimi-k2.5 (outro modelo do Bedrock)
+# Opcional, antes do comando:  MODELO_CONVERSA=moonshotai.kimi-k2.5 (outro modelo do Bedrock)
 set -euo pipefail
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -27,7 +26,7 @@ export MODELO_CONVERSA="${MODELO_CONVERSA:-us.openai.gpt-5.6-luna}"
 export MODELO_RESERVA="${MODELO_RESERVA:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"  # assume se o principal falhar
 export AWS_DEFAULT_REGION="${REGIAO}"
 PY=.venv/bin/python
-ENTRAR="Rode: aws login"
+ENTRAR="Entre na AWS e tente de novo."
 if [ -n "$STUDIO" ]; then
   ENTRAR="Recarregue a página."
   export PATH="$HOME/.local/bin:$PATH"    # onde o uv é instalado
@@ -39,7 +38,7 @@ avisar() { printf '\n== %s\n' "$*"; }
 parar() { printf '\nNão deu: %s\n' "$*" >&2; exit 1; }
 
 conferir() {
-  command -v aws >/dev/null || parar "falta o AWS CLI v2. Instale e rode: aws login"
+  command -v aws >/dev/null || parar "falta o AWS CLI v2."
   if ! command -v uv >/dev/null; then
     [ -n "$STUDIO" ] || parar "falta o uv. Instale com: curl -LsSf https://astral.sh/uv/install.sh | sh"
     avisar "Instalando o uv (só na primeira vez)"
@@ -118,5 +117,5 @@ case "${1:-}" in
   implantar) implantar ;;  # só implanta e prepara os dados, sem abrir o chat
   abrir) abrir ;;
   remover) remover ;;
-  *) sed -n '2,10p' "$SCRIPT" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,11p' "$SCRIPT" | sed 's/^# \{0,1\}//' ;;
 esac

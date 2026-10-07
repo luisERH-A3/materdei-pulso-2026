@@ -165,8 +165,8 @@ def explicar_erro(erro: Exception) -> str:
     """Troca os erros mais comuns da aula por uma instrução do que fazer."""
     texto = str(erro)
     if any(pista in texto for pista in ("aws login", "xpired", "Unable to locate credentials", "InvalidClientTokenId")):
-        cliente.clear()  # os próximos acessos criam clientes novos, já com o login refeito
-        return "O login da AWS expirou. Rode `aws login` no terminal e tente de novo."
+        cliente.clear()  # os próximos acessos criam clientes novos, com a credencial renovada
+        return "A credencial da AWS expirou. Espere alguns segundos e envie a mensagem de novo."
     if "ResourceNotFoundException" in texto and "InvokeAgentRuntime" in texto:  # a stack foi removida com o chat aberto
         return ("O agente desta implantação não existe mais: a stack foi removida. Pare o chat (Ctrl+C no terminal) e rode "
                 "`bash agente-agendamento/demo.sh` para implantar de novo.")

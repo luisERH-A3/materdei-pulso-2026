@@ -1,19 +1,19 @@
 # Guia de início · do zero ao agente rodando
 
-Este guia leva você do e-mail com o acesso da AWS até o agente da aula funcionando, pronto para servir de base ao seu projeto. **Você não instala nada no seu computador:** tudo acontece no navegador, dentro da AWS. Não precisa ter experiência com desenvolvimento: siga na ordem e copie os comandos.
+Este guia leva você do e-mail com o acesso da AWS até o agente da aula funcionando, pronto para servir de base ao seu projeto. **Você não instala nada:** tudo acontece no navegador, dentro da AWS. Não precisa ter experiência com desenvolvimento: siga na ordem e copie os comandos.
 
 **Tempo:** cerca de 30 minutos na primeira vez.
 
 ## Antes de começar: três pontos de atenção
 
 > **1. Planeje antes de construir.**
-> Antes de criar qualquer recurso para o seu projeto, desenhe a solução no papel. Comece pelo **mínimo viável**: o menor conjunto de peças que já funciona de ponta a ponta. Em geral, um modelo, um prompt, uma ou duas ferramentas e poucos dados. Só depois de ver o mínimo funcionando pense no **fluxo produtivo completo** (mais ferramentas, memória, guardrails mais finos, observabilidade, avaliação). Quem começa pelo completo gasta o orçamento antes de ter algo para mostrar.
+> Desenhe a solução no papel antes de criar qualquer recurso. Comece pelo **mínimo viável**: o menor conjunto de peças que funciona de ponta a ponta. Em geral, um modelo, um prompt, uma ou duas ferramentas e poucos dados. Só depois pense no **fluxo produtivo completo** (mais ferramentas, memória, guardrails, observabilidade, avaliação). Quem começa pelo completo gasta o orçamento antes de ter algo para mostrar.
 
 > **2. O orçamento é de US$ 80, somado, para a turma inteira.**
-> Não é por aluno: é o total de todos, no mês. Se a turma passar disso, **o acesso de todos é bloqueado automaticamente**. Por isso, teste o mínimo necessário para demonstrar que funciona. Cada mensagem enviada ao agente chama o modelo e custa. Não deixe conversas longas rodando, não faça testes de carga e não repita o mesmo teste sem motivo.
+> Não é por aluno: é o total de todos, no mês. Se a turma passar disso, **o acesso de todos é bloqueado automaticamente**. Cada mensagem enviada ao agente chama o modelo e custa. Teste o mínimo necessário para demonstrar: sem conversas longas, sem testes de carga, sem repetir o mesmo teste.
 
 > **3. Desligue o que não está usando.**
-> O seu ambiente (passo 2) custa por hora ligado. Ele desliga sozinho depois de 25 minutos sem uso, mas o certo é desligar ao terminar. **Salve sempre o que editar (Ctrl+S):** ao desligar, o que está salvo fica guardado, e o que não foi salvo se perde. E, quando o seu projeto acabar, remova a sua stack (passo 9).
+> O seu ambiente (passo 2) custa por hora ligado. Desligue ao terminar: se esquecer, ele desliga sozinho depois de 25 minutos sem uso. **Salve sempre o que editar (Ctrl+S):** o que não foi salvo se perde ao desligar. Quando o seu projeto acabar, remova a sua stack (passo 9).
 
 | Passo | O que você faz | Tempo |
 |---|---|---|
@@ -121,7 +121,7 @@ Antes de rodar o comando do próximo passo, vale entender o que ele faz. São tr
 - **Tudo nasce e morre junto.** Um comando cria, um comando apaga. Você não precisa lembrar o que criou.
 - **Se algo falhar no meio, o CloudFormation desfaz** o que já tinha feito (*rollback*). Não fica nada pela metade.
 - **Rodar o comando de novo é seguro.** Ele só aplica o que mudou no template ou no código.
-- **Custo:** nada aqui cobra por ficar parado. Paga-se pelo uso, principalmente pelas chamadas ao modelo. Mesmo assim, **remova a stack quando terminar** (passo 11), para a conta não acumular recursos.
+- **Custo:** nada aqui cobra por ficar parado. Paga-se pelo uso, principalmente pelas chamadas ao modelo. Mesmo assim, **remova a stack quando terminar** (passo 9), para a conta não acumular recursos.
 - **Você vê a sua stack no console**, em [CloudFormation > Stacks](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks). A aba **Recursos** lista cada peça, e a aba **Eventos** mostra o passo a passo e o motivo de qualquer erro.
 
 **Por que o prefixo importa.** A conta é dividida pela turma. O prefixo (`PROJETO`) entra no nome da stack e de todos os recursos, e é ele que separa o que é seu do que é do colega. O seu acesso só deixa criar recursos cujo nome começa com `aluno`.
@@ -157,7 +157,7 @@ Nesta ordem. Os dois primeiros bastam para começar. Tudo abre no próprio Jupyt
 
 | Ordem | O quê | Como abrir | Por quê |
 |---|---|---|---|
-| 1 | [`README.md`](../README.md) | Botão direito no arquivo > **Open With > Markdown Preview** | Os comandos, as opções e onde está cada tema da aula no código |
+| 1 | [`README.md`](../README.md) | Botão direito no arquivo > **Open With > Markdown Preview** | Os comandos e onde está cada tema da aula no código |
 | 2 | [`docs/arquitetura.html`](arquitetura.html) | Dois cliques. Se aparecer o botão **Trust HTML**, no topo, clique nele | Como o agente funciona: os serviços, os dados, uma conversa volta por volta, a interface e a observabilidade |
 | 3 | [Notebook do Módulo 2](modulo2/modulo2_arquitetura_de_modelos.ipynb) | Dois cliques. No canto superior direito, escolha o kernel **Pulso (.venv)**, que o passo 5 criou | Cada conceito do Módulo 2 em uma célula que você roda e altera. **Atenção: cada célula que chama o modelo custa.** Rode uma vez, com calma |
 | 4 | Slides: [Módulo 2](modulo2/modulo2-arquitetura-de-modelos.pdf) e [Módulo 3](modulo3/modulo3-agentic-ai-deep-dive.pdf) | Dois cliques, ou direto no GitHub | A teoria, para consultar |
@@ -216,7 +216,7 @@ No modo debug, a aba **Na AWS** tem um link para cada peça do agente no console
 | **Observabilidade** | AgentCore Observability, no CloudWatch | Abra o seu agente, vá em **Sessions** e procure o id da sessão que a aba mostra: cada mensagem é um trace | Módulo 3, slide 55 |
 | **Agente** | AgentCore Runtime | Onde o agente roda | Módulo 3, slide 40 |
 | **Ferramentas da agenda** | AgentCore Gateway | A Lambda publicada como ferramentas MCP | Módulo 3, slides 30 e 36 a 39 |
-| **Recursos criados** | CloudFormation | A sua stack, com tudo o que o passo 6 explicou | |
+| **Recursos criados** | CloudFormation | A sua stack, com tudo o que o passo 4 explicou | |
 
 Na conta da turma você vai ver também recursos dos colegas. Os seus são os que começam com o seu prefixo.
 
@@ -271,9 +271,3 @@ A tela e o terminal quase sempre dizem o que fazer. Os casos mais comuns:
 | O espaço não liga | Espere um minuto e tente de novo. Se continuar, avise o professor |
 
 Não resolveu? Copie a mensagem de erro inteira e mande para o professor, junto com o comando que você rodou.
-
----
-
-## Prefere rodar na sua máquina?
-
-O Studio é o caminho da turma. Quem já desenvolve e tem Linux, macOS ou WSL pode rodar localmente: veja "Como rodar a demo" no [README](../README.md).

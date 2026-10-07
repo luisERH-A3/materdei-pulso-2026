@@ -1,7 +1,7 @@
 """Configuração: tudo o que muda de um ambiente para outro fica aqui.
 
-Na nuvem, os valores chegam como variáveis de ambiente (definidas em infra/completa/template.yaml).
-Na sua máquina, vêm do arquivo .env que infra/completa/deploy.sh grava a partir das saídas da stack.
+No Runtime, os valores chegam como variáveis de ambiente (definidas em infra/completa/template.yaml).
+No terminal (interface e scripts), vêm do arquivo .env que infra/completa/deploy.sh grava a partir das saídas da stack.
 """
 import os
 from pathlib import Path

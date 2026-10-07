@@ -4,12 +4,12 @@ Material das aulas de outubro de 2026 para a Rede Mater Dei: os slides, o notebo
 
 Na demo, um agente atende pacientes de uma rede de saúde **fictícia**: mostra as consultas, oferece horários, remarca **só depois do "sim"** e tira dúvidas de preparo de exames lendo os documentos da Rede (RAG). Tudo é serverless, em `us-east-1`.
 
-**Aluno da turma?** Siga o [guia de início](docs/guia-de-inicio.md): do login no console da AWS ao agente funcionando, passo a passo, sem instalar nada no seu computador.
+**Comece pelo [guia de início](docs/guia-de-inicio.md):** do login no console da AWS ao agente funcionando, passo a passo, sem instalar nada.
 
 ## Estrutura
 
 ```
-pulso-trilha-tech/
+materdei-pulso-2026/
 ├── README.md                              este arquivo
 ├── docs/
 │   ├── guia-de-inicio.md                  COMECE AQUI: do zero ao agente rodando, passo a passo
@@ -50,72 +50,44 @@ pulso-trilha-tech/
 
 ## Como rodar a demo
 
-Todos os comandos abaixo são para rodar **na raiz do repositório**. Há dois lugares para rodar, e o `demo.sh` reconhece cada um:
+A demo roda no **SageMaker Studio**, o ambiente da turma na AWS: arquivos, editor, Jupyter, terminal e a tela do chat, tudo no navegador. O [guia de início](docs/guia-de-inicio.md) mostra como abrir o seu.
 
-| Onde | Para quem | O que tem | Custo |
-|---|---|---|---|
-| **SageMaker Studio** | Os alunos da turma. Veja o [guia de início](docs/guia-de-inicio.md) | Arquivos, editor, Jupyter, terminal e a tela web do chat, tudo no navegador, sem instalar nada | Cerca de US$ 0,05 por hora de ambiente ligado |
-| **Na sua máquina** | Quem já desenvolve | Tudo, com o seu editor | Só o uso da AWS |
-
-No Studio não há nada para instalar nem login para fazer: pule o `aws login` e defina o `PROJETO`.
-
-**Na sua máquina, você precisa de:** uma conta AWS, [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) e [uv](https://docs.astral.sh/uv/). Use Linux, macOS ou WSL.
+No terminal do JupyterLab, **na raiz do repositório**:
 
 ```bash
-aws login                            # 1. entre na sua conta AWS
-bash agente-agendamento/demo.sh      # 2. implanta tudo, prepara os dados e abre o chat
+export PROJETO=alunomsouza           # o SEU prefixo, só na primeira vez
+bash agente-agendamento/demo.sh      # implanta tudo, prepara os dados e sobe o chat
 ```
 
-São cerca de 5 minutos na primeira vez. O script cria o ambiente Python, testa o modelo, implanta a stack, carrega os dados e abre o chat no navegador.
+São cerca de 8 minutos na primeira vez. No fim, o terminal mostra o endereço do chat, que termina em `/proxy/8501/`: abra em outra aba.
 
 | Comando | O que faz |
 |---|---|
-| `bash agente-agendamento/demo.sh` | Implanta tudo: o agente roda no AgentCore Runtime, e as ferramentas da agenda são uma Lambda publicada pelo AgentCore Gateway. Precisa de permissão para criar papéis IAM |
-| `bash agente-agendamento/demo.sh abrir` | Abre o chat de novo, com a demo já implantada |
-| `bash agente-agendamento/demo.sh remover` | Apaga da AWS tudo o que a demo criou |
+| `bash agente-agendamento/demo.sh` | Implanta ou atualiza a sua stack, prepara os dados e sobe o chat |
+| `bash agente-agendamento/demo.sh abrir` | Sobe o chat de novo, com a demo já implantada |
+| `bash agente-agendamento/demo.sh remover` | Apaga da AWS tudo o que a sua stack criou |
 
-**Opções**, escritas antes do comando:
+**O prefixo (`PROJETO`)** separa o que é seu do que é dos colegas:
 
-- `MODELO_CONVERSA=moonshotai.kimi-k2.5 bash agente-agendamento/demo.sh` usa outro modelo. O padrão é o GPT-5.6 Luna (`us.openai.gpt-5.6-luna`). Se a conta não tiver acesso, o script avisa antes de implantar.
-- `PROJETO=aluno01 bash agente-agendamento/demo.sh` troca o prefixo dos recursos, para várias pessoas dividirem a mesma conta.
+- Começa com `aluno`, tem só letras minúsculas e números, no máximo 12 caracteres. Fora disso, a AWS responde `AccessDenied`.
+- Não pode repetir o de um colega: quem repete sobrescreve a stack do outro.
+- O script guarda o prefixo depois da primeira implantação, em `agente-agendamento/.projeto`.
 
-**Alunos: o `PROJETO` é obrigatório e tem regras.** Na conta da turma, o seu acesso só permite criar recursos cujo nome começa com `aluno`. Se rodar sem `PROJETO`, o padrão (`pulso`) é negado e você recebe `AccessDenied`.
+**O orçamento é de US$ 80 por mês, somado, para a turma inteira.** Se passar, o acesso de todos é bloqueado. Teste o mínimo necessário para demonstrar, desligue o seu espaço ao terminar e remova a stack quando o projeto acabar.
 
-- Use um prefixo que comece com `aluno` e seja só seu, por exemplo `aluno01`, `aluno02`. Ele deve ter de 3 a 12 caracteres, em minúsculas e números, e começar com letra.
-- Dois alunos com o mesmo prefixo sobrescrevem a stack um do outro. Combine com o professor qual é o seu.
-- O orçamento da conta é de **US$ 80 por mês, somado, para a turma inteira**. Se passar, o acesso de todos é bloqueado. Teste o mínimo necessário para demonstrar.
-- Use o mesmo prefixo em todos os comandos, inclusive em `abrir` e `remover`, senão o script não acha a sua stack. Depois da primeira implantação, o script guarda o prefixo em `agente-agendamento/.projeto`:
-  ```bash
-  export PROJETO=aluno01                  # vale para o terminal inteiro
-  bash agente-agendamento/demo.sh
-  bash agente-agendamento/demo.sh abrir
-  bash agente-agendamento/demo.sh remover # ao terminar, para não deixar recursos na conta
-  ```
-- Rode sempre em `us-east-1`. Seu acesso para implantar só vale nessa região.
-- A implantação cria papéis IAM, mas só os de nome `aluno*-agenda-lambda`, `aluno*-gateway` e `aluno*-agente-runtime`.
+**Outro modelo:** `MODELO_CONVERSA=moonshotai.kimi-k2.5 bash agente-agendamento/demo.sh`. O padrão é o GPT-5.6 Luna (`us.openai.gpt-5.6-luna`). Serve qualquer modelo do Bedrock que aceite ferramentas, e o script testa o acesso antes de implantar.
 
-**Para experimentar no chat** (a tela já traz estes botões):
-
-- "Quais são as minhas próximas consultas?"
-- "Preciso remarcar a consulta de cardiologia." Depois escolha uma opção e confirme com "sim".
-- "O exame de glicemia precisa de jejum?"
-- "Quero trocar o meu convênio."
-- A mensagem da Dona Helena, da história dos slides: três pedidos em um texto só.
-
-**Se algo der errado**, a própria tela diz o que fazer. Os dois casos mais comuns:
-
-- **O login da AWS expirou** (ele dura poucas horas): rode `aws login` e envie a mensagem de novo.
-- **A primeira mensagem de uma conversa leva de 7 a 12 segundos** e as seguintes de 5 a 6. Ao abrir uma conversa, a interface já avisa o Runtime para ligar o ambiente daquela sessão (o aquecimento, que não chama o modelo). Se a mensagem chegar antes de ele terminar, ela espera esse preparo.
+**Deu erro?** Veja a [seção 10 do guia](docs/guia-de-inicio.md#10-deu-erro).
 
 ## O que a interface mostra
 
 Os prints de cada tela estão na seção 4 de `docs/arquitetura.html`.
 
-A tela abre só com o chat, como o paciente veria. Enquanto o agente trabalha, o chat mostra o passo em que ele está (preparando, entendendo o pedido, consultando a agenda, escrevendo), com um contador de segundos.
+A tela abre só com o chat, como o paciente veria, com botões para os pedidos de exemplo. Enquanto o agente trabalha, o chat mostra o passo em que ele está.
 
-Cada conversa fica salva em `agente-agendamento/logs/conversas/`, já no envio da mensagem, e aparece na barra lateral, em **Histórico**, com as de todos os pacientes. Um clique reabre a conversa com o rastro de cada resposta, para analisar no modo debug, e troca o paciente da tela junto. Abrir outra conversa não perde a atual. Para apagar a conversa aberta, use o botão **Apagar conversa**, no topo, que pede uma confirmação. Dentro de 7 dias, o prazo do AgentCore Memory, ela também continua de onde parou.
+Cada conversa fica salva e aparece na barra lateral, em **Histórico**. Um clique reabre a conversa com o rastro de cada resposta, sem chamar o modelo de novo.
 
-O **Modo debug**, na barra do topo, abre ao lado o painel "Por dentro do agente". A barra fica presa enquanto a página rola, então dá para ligar e desligar a qualquer momento, inclusive numa conversa do histórico. As explicações ficam nos ícones amarelos com exclamação: passe o mouse para ler.
+O **Modo debug**, na barra do topo, abre ao lado o painel "Por dentro do agente". As explicações ficam nos ícones amarelos com exclamação: passe o mouse para ler.
 
 | Aba do modo debug | O que tem |
 |---|---|
@@ -152,8 +124,8 @@ Para ver o guardrail agir, abra "Testar o guardrail" na barra lateral: conselho 
 - **Mudar o prompt:** edite no console do Bedrock Prompt Management e crie uma versão. O agente usa a última versão publicada e a atualiza em até um minuto, sem reiniciar. Para fixar uma, defina `PROMPT_VERSAO` no `.env`.
 - **Está lento ou deu erro?** No modo debug, a aba Resposta mostra onde foi o tempo de cada resposta. O mesmo registro fica no CloudWatch Logs do Runtime: o tempo de cada etapa, o de cada chamada ao modelo (`chamadas_ms`) e os erros, com o detalhe.
 - **Trocar o modelo:** defina `MODELO_CONVERSA` no `.env`. Serve qualquer modelo do Bedrock que aceite ferramentas.
-- **Mudar os dados, e antes de cada aula:** rode `agente-agendamento/.venv/bin/python agente-agendamento/data/prepare.py`. Ele envia o Excel de novo, desfaz as remarcações feitas no chat e avança as datas da agenda em semanas inteiras quando as do Excel já passaram.
-- **Notebook:** no Studio, escolha o kernel **Pulso (.venv)**, que o `demo.sh` registra. Na sua máquina, use o kernel do `.venv` do projeto. O `requirements.txt` já inclui o que ele precisa.
+- **Mudar os dados ou desfazer as remarcações:** rode `agente-agendamento/.venv/bin/python agente-agendamento/data/prepare.py`. Ele envia o Excel de novo e avança as datas da agenda quando as do Excel já passaram.
+- **Notebook:** escolha o kernel **Pulso (.venv)**, que o `demo.sh` registra.
 - **LGPD:** os dados são fictícios e ficam nos EUA. A memória expira em 7 dias.
-- **Custo:** você paga só pelo uso. Para remover tudo: `bash agente-agendamento/demo.sh remover`.
+- **Custo:** a stack só cobra pelo uso, principalmente as chamadas ao modelo. O espaço do Studio cobra por hora ligado.
 - **Escopo:** é material de aula, com dados fictícios, e o desenho não foi preparado para uso real. Ficaram de fora, de propósito: AgentCore Policy, memória de longo prazo e login.

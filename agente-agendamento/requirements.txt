@@ -1,4 +1,4 @@
-# Na sua máquina: preparar os dados e abrir a interface
+# Preparar os dados e abrir a interface
 -r app/agent/requirements.txt
 openpyxl>=3.1             # ler o Excel
 streamlit>=1.50           # interface
@@ -6,8 +6,8 @@ altair>=5                 # o mapa dos vetores, na aba Vetores
 numpy>=2                  # a redução dos vetores a 2 dimensões (PCA)
 
 # O notebook do Módulo 2 (docs/modulo2/modulo2_arquitetura_de_modelos.ipynb)
-ipykernel>=6              # o kernel que o VS Code e o Jupyter usam
+ipykernel>=6              # o kernel do Jupyter
 pip                       # para a célula %pip do notebook funcionar no ambiente do uv
 pandas>=2                 # as tabelas
 matplotlib>=3.8           # o mapa dos significados
-botocore[crt]             # credenciais do "aws login"
+botocore[crt]             # credenciais de login do AWS CLI

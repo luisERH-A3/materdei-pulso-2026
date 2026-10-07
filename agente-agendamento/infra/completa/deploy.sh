@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Demo completa: implanta (ou atualiza) todos os recursos na AWS. Quem chama é o demo.sh (bash agente-agendamento/demo.sh).
 #
-# Pré-requisitos: AWS CLI v2, uv e Python 3 (Linux, macOS ou WSL no Windows) e permissão para criar os recursos da stack.
+# Pré-requisito: permissão para criar os recursos da stack.
 #
 #   1. cria o bucket de artefatos (se ainda não existir)
 #   2. empacota o agente para arm64, com as dependências, como o Runtime exige
